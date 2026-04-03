@@ -13,16 +13,23 @@ from PyQt5.QtCore import QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import QMainWindow, QApplication, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QFrame
 
-# import calutils1123
-# from ikcal1 import posetoangle
-# from utils.piper_arm import robot_arm
-# from dual_camera_calibrator import get_calibrator
-# from core import robot
-# from core import trans
+import calutils1123
+from ikcal1 import posetoangle
+from utils.piper_arm import robot_arm
+from dual_camera_calibrator import get_calibrator
+from core import robot
+from core import trans
 
 # ==================== 共享资源 ====================
 target_position = None
 exit_flag = False
+#相机1独立选点/深度
+click_points1 = []
+depth_values1 = []
+# 相机2独立选点/深度
+click_points2 = []
+depth_values2 = []
+# 原兼容变量（保留）
 click_points = []
 depth_values = []
 lock = threading.Lock()
@@ -35,32 +42,46 @@ depth_frame_cache2 = None
 # ==================== 相机配置 ====================
 TARGET_SERIAL1 = "333422302278"
 TARGET_SERIAL2 = "243222074585"
+cw1 = 640
+cl1 = 480
+cw2 = 1280
+cl2 = 720
 
 # ==================== 相机采集线程 ====================
 def camera1_task():
-    '''配置相机 1，获取图像'''
+    '''配置相机 1,获取图像'''
     global exit_flag, pipeline1, align1, color_frame_cache1, depth_frame_cache1
     
     pipeline1 = rs.pipeline()
     config1 = rs.config()
-    config1.enable_device(TARGET_SERIAL1)
-    config1.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 15)
-    config1.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 15)
-    pipeline1.start(config1)
-    align1 = rs.align(rs.stream.color)
+
+    try:
+        config1.enable_device(TARGET_SERIAL1)
+        config1.enable_stream(rs.stream.color, cw1, cl1, rs.format.bgr8, 15)
+        config1.enable_stream(rs.stream.depth, cw1, cl1, rs.format.z16, 15)
+        pipeline1.start(config1)
+        align1 = rs.align(rs.stream.color)
+        print(("【相机1】初始化成功"))
+    except Exception as e:
+        print(f"【相机1】初始化失败:{str(e)}")
+        exit_flag = True
+        return
     
     while not exit_flag:
-        frames = pipeline1.wait_for_frames(5000)
+        frames = pipeline1.wait_for_frames(100)
         aligned_frames = align1.process(frames)
         color_frame = aligned_frames.get_color_frame()
         depth_frame = aligned_frames.get_depth_frame()
         
         if not color_frame or not depth_frame:
             continue
-        
+
+        color_data = np.asanyarray(color_frame.get_data())
+        depth_data = depth_frame
+
         with lock:
-            color_frame_cache1 = np.asanyarray(color_frame.get_data())
-            depth_frame_cache1 = depth_frame
+            color_frame_cache1 = color_data
+            depth_frame_cache1 = depth_data
             
     pipeline1.stop()
     print("相机 1 线程已结束")
@@ -71,14 +92,20 @@ def camera2_task():
     
     pipeline2 = rs.pipeline()
     config2 = rs.config()
-    config2.enable_device(TARGET_SERIAL2)
-    config2.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
-    config2.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
-    pipeline2.start(config2)
-    align2 = rs.align(rs.stream.color)
+    try:
+        config2.enable_device(TARGET_SERIAL2)
+        config2.enable_stream(rs.stream.color, cw2, cl2, rs.format.bgr8, 30)
+        config2.enable_stream(rs.stream.depth, cw2, cl2, rs.format.z16, 30)
+        pipeline2.start(config2)
+        align2 = rs.align(rs.stream.color)
+        print("【相机2】初始化成功")
+    except Exception as e:
+        print(f"【相机2】初始化失败：{str(e)}")
+        exit_flag = True
+        return
     
     while not exit_flag:
-        frames = pipeline2.wait_for_frames(5000)
+        frames = pipeline2.wait_for_frames(100)
         aligned_frames = align2.process(frames)
         color_frame = aligned_frames.get_color_frame()
         depth_frame = aligned_frames.get_depth_frame()
@@ -86,9 +113,11 @@ def camera2_task():
         if not color_frame or not depth_frame:
             continue
         
+        color_data = np.asanyarray(color_frame.get_data())
+        depth_data = depth_frame
         with lock:
-            color_frame_cache2 = np.asanyarray(color_frame.get_data())
-            depth_frame_cache2 = depth_frame
+            color_frame_cache2 = color_data
+            depth_frame_cache2 = depth_data
             
     pipeline2.stop()
     print("相机 2 线程已结束")
@@ -165,7 +194,7 @@ class RobotControlWindow(QMainWindow):
         left_layout.addWidget(self.video_label1)
         
         # 摄像头 1 标签
-        self.cam1_name = QLabel("相机 1 (主相机 - 用于选点)")
+        self.cam1_name = QLabel("相机 1")
         self.cam1_name.setStyleSheet("color: #00ff00; font-weight: bold;")
         self.cam1_name.setAlignment(QtCore.Qt.AlignCenter)
         left_layout.addWidget(self.cam1_name)
@@ -185,7 +214,7 @@ class RobotControlWindow(QMainWindow):
         left_layout.addWidget(self.video_label2)
         
         # 摄像头 2 标签
-        self.cam2_name = QLabel("相机 2 (辅助相机)")
+        self.cam2_name = QLabel("相机 2 ")
         self.cam2_name.setStyleSheet("color: #0088ff; font-weight: bold;")
         self.cam2_name.setAlignment(QtCore.Qt.AlignCenter)
         left_layout.addWidget(self.cam2_name)
@@ -208,7 +237,7 @@ class RobotControlWindow(QMainWindow):
         self.btn_disable.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
 
         self.btn_caliload = QPushButton("加载标定数据")
-        self.btn_disable.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
+        self.btn_caliload.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
         
         
         # 原有按钮
@@ -219,6 +248,7 @@ class RobotControlWindow(QMainWindow):
         self.btn_stop.setStyleSheet("background-color: #cc0000; color: white; font-weight: bold;")
         
         for btn in [self.btn_calibrate_cam1, self.btn_calibrate_cam2,
+                    self.btn_disable,self.btn_caliload,
                     self.btn_home, self.btn_move_to_point, 
                     self.btn_clear_points, self.btn_stop]:
             btn.setMinimumHeight(45)
@@ -308,7 +338,7 @@ class RobotControlWindow(QMainWindow):
         
         # ===== 更新摄像头 1 画面 =====
         with lock:
-            color_img1 = color_frame_cache1
+            color_img1 = color_frame_cache1.copy() if color_frame_cache1 is not None else None
         
         if color_img1 is not None:
             display_img1 = color_img1.copy()
@@ -326,10 +356,12 @@ class RobotControlWindow(QMainWindow):
             self.video_label1.setPixmap(QPixmap.fromImage(qt_img1).scaled(
                 self.video_label1.width(), self.video_label1.height(),
                 QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+        else:
+            self.video_label1.setText('帧获取中……')
         
         # ===== 更新摄像头 2 画面 =====
         with lock:
-            color_img2 = color_frame_cache2
+             color_img2 = color_frame_cache2.copy() if color_frame_cache2 is not None else None
         
         if color_img2 is not None:
             display_img2 = color_img2.copy()
@@ -347,8 +379,11 @@ class RobotControlWindow(QMainWindow):
             self.video_label2.setPixmap(QPixmap.fromImage(qt_img2).scaled(
                 self.video_label2.width(), self.video_label2.height(),
                 QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
-        
-        self.points_label.setText(f"已选点：{len(click_points)}/3")
+        else:
+            self.video_label2.setText("帧获取中...")
+
+        total_points = len(click_points1) + len(click_points2)
+        self.points_label.setText(f"已选点：{total_points}/3")
         
     def on_mouse_click1(self, event):
         """处理鼠标点击事件（仅在摄像头 1 上生效）"""
@@ -365,15 +400,15 @@ class RobotControlWindow(QMainWindow):
         
         pixmap = self.video_label1.pixmap()
         if pixmap:
-            ratio_x = 1280 / self.video_label1.width()
-            ratio_y = 720 / self.video_label1.height()
+            ratio_x = cw1 / self.video_label1.width()
+            ratio_y = cl1 / self.video_label1.height()
             img_x = int(x * ratio_x)
             img_y = int(y * ratio_y)
             
             with lock:
-                click_points.append((img_x, img_y))
+                click_points1.append((img_x, img_y))
                 depth = depth_frame_cache1.get_distance(img_x, img_y) if depth_frame_cache1 else 0
-                depth_values.append(depth)
+                depth_values1.append(depth)
                 
             # 通过实例信号发送（在主线程）
             self.signal_emitter.status_update.emit(f"已选点：({img_x}, {img_y}), 深度：{depth:.3f}m")
@@ -393,15 +428,15 @@ class RobotControlWindow(QMainWindow):
         
         pixmap = self.video_label2.pixmap()
         if pixmap:
-            ratio_x = 1280 / self.video_label2.width()
-            ratio_y = 720 / self.video_label2.height()
+            ratio_x = cw2 / self.video_label2.width()
+            ratio_y = cl2 / self.video_label2.height()
             img_x = int(x * ratio_x)
             img_y = int(y * ratio_y)
             
             with lock:
-                click_points.append((img_x, img_y))
+                click_points2.append((img_x, img_y))
                 depth = depth_frame_cache1.get_distance(img_x, img_y) if depth_frame_cache1 else 0
-                depth_values.append(depth)
+                depth_values2.append(depth)
                 
             # 通过实例信号发送（在主线程）
             self.signal_emitter.status_update.emit(f"已选点：({img_x}, {img_y}), 深度：{depth:.3f}m")
