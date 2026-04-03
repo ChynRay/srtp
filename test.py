@@ -98,7 +98,7 @@ def robot_task():
     """机械臂线程：持续监听目标位置，有新目标就移动"""
     global exit_flag, target_position
     
-    tran = trans.Transform()
+    arm = robot.RobotArm()
     while not exit_flag:
         current_target = None
         current_angle = None
@@ -110,13 +110,10 @@ def robot_task():
 
         if current_angle is not None:
             print(f"机械臂移动到：{current_target}")
-            tran.robot_move(current_angle)
+            arm.move_joints(current_angle)
             current_target = None
 
         time.sleep(0.1)
-        
-    tran.robot_disable()
-    print("机械臂线程已结束")
 
 # ==================== PyQt5 信号通信类 ====================
 class SignalEmitter(QObject):
@@ -132,6 +129,7 @@ class RobotControlWindow(QMainWindow):
         self.setWindowTitle("机械臂视觉控制系统（双摄像头）")
         self.setGeometry(200, 200, 1200, 900)
         
+        self.arm = robot.RobotArm()
         self.tran = trans.Transform()
         
         # 标定器（不初始化相机，避免与相机线程冲突）
@@ -163,7 +161,7 @@ class RobotControlWindow(QMainWindow):
         self.video_label1 = QLabel("摄像头 1 画面")
         self.video_label1.setFixedSize(800, 450)
         self.video_label1.setStyleSheet("border: 2px solid #00ff00; background-color: #2a2a2a; color: white;")
-        self.video_label1.mousePressEvent = self.on_mouse_click
+        self.video_label1.mousePressEvent = self.on_mouse_click1
         left_layout.addWidget(self.video_label1)
         
         # 摄像头 1 标签
@@ -183,6 +181,7 @@ class RobotControlWindow(QMainWindow):
         self.video_label2 = QLabel("摄像头 2 画面")
         self.video_label2.setFixedSize(800, 450)
         self.video_label2.setStyleSheet("border: 2px solid #0088ff; background-color: #2a2a2a; color: white;")
+        self.video_label2.mousePressEvent = self.on_mouse_click2
         left_layout.addWidget(self.video_label2)
         
         # 摄像头 2 标签
@@ -198,12 +197,19 @@ class RobotControlWindow(QMainWindow):
         panel.setFixedWidth(300)
         btn_layout = QVBoxLayout(panel)
         
-        # 标定按钮（新增）
+        # 按钮（新增）
         self.btn_calibrate_cam1 = QPushButton("📷 相机 1 标定")
         self.btn_calibrate_cam1.setStyleSheet("background-color: #00aa00; color: white; font-weight: bold;")
         
         self.btn_calibrate_cam2 = QPushButton("📷 相机 2 标定")
         self.btn_calibrate_cam2.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
+
+        self.btn_disable = QPushButton("失能")
+        self.btn_disable.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
+
+        self.btn_caliload = QPushButton("加载标定数据")
+        self.btn_disable.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
+        
         
         # 原有按钮
         self.btn_home = QPushButton("回零位")
@@ -232,11 +238,11 @@ class RobotControlWindow(QMainWindow):
         self.btn_calibrate_cam1.clicked.connect(self.on_calibrate_cam1)
         self.btn_calibrate_cam2.clicked.connect(self.on_calibrate_cam2)
         self.btn_home.clicked.connect(self.on_home)
-        self.btn_grip_open.clicked.connect(lambda: self.on_grip(True))
-        self.btn_grip_close.clicked.connect(lambda: self.on_grip(False))
+        self.btn_disable.clicked.connect(self.arm.disable)
         self.btn_move_to_point.clicked.connect(self.on_move_to_point)
         self.btn_clear_points.clicked.connect(self.on_clear_points)
         self.btn_stop.clicked.connect(self.on_emergency_stop)
+        self.btn_caliload.clicked.connect(self.tran.load_calib)
         
         # ===== 连接自定义信号（在主线程）=====
         self.signal_emitter.status_update.connect(self.update_status)
@@ -298,7 +304,7 @@ class RobotControlWindow(QMainWindow):
     
     def update_display(self):
         """定时更新显示画面"""
-        global color_frame_cache1, color_frame_cache2, click_points
+        global color_frame_cache1, color_frame_cache2, click_points2, click_points1
         
         # ===== 更新摄像头 1 画面 =====
         with lock:
@@ -307,7 +313,7 @@ class RobotControlWindow(QMainWindow):
         if color_img1 is not None:
             display_img1 = color_img1.copy()
             
-            for i, (px, py) in enumerate(click_points):
+            for i, (px, py) in enumerate(click_points1):
                 color = (0, 255, 0)
                 cv2.circle(display_img1, (px, py), 8, color, -1)
                 cv2.putText(display_img1, str(i+1), (px+10, py+10), 
@@ -327,6 +333,13 @@ class RobotControlWindow(QMainWindow):
         
         if color_img2 is not None:
             display_img2 = color_img2.copy()
+
+            for i, (px, py) in enumerate(click_points2):
+                color = (0, 255, 0)
+                cv2.circle(display_img2, (px, py), 8, color, -1)
+                cv2.putText(display_img2, str(i+1), (px+10, py+10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+
             rgb2 = cv2.cvtColor(display_img2, cv2.COLOR_BGR2RGB)
             h2, w2, ch2 = rgb2.shape
             bytes_per_line2 = ch2 * w2
@@ -337,9 +350,9 @@ class RobotControlWindow(QMainWindow):
         
         self.points_label.setText(f"已选点：{len(click_points)}/3")
         
-    def on_mouse_click(self, event):
+    def on_mouse_click1(self, event):
         """处理鼠标点击事件（仅在摄像头 1 上生效）"""
-        global click_points, depth_values, depth_frame_cache1
+        global click_points1, depth_values1, depth_frame_cache1
         
         if event.source() != self.video_label1:
             return
@@ -364,6 +377,34 @@ class RobotControlWindow(QMainWindow):
                 
             # 通过实例信号发送（在主线程）
             self.signal_emitter.status_update.emit(f"已选点：({img_x}, {img_y}), 深度：{depth:.3f}m")
+
+    def on_mouse_click2(self, event):
+        """处理鼠标点击事件（仅在摄像头 2 上生效）"""
+        global click_points2, depth_values2, depth_frame_cache2
+        
+        if event.source() != self.video_label2:
+            return
+            
+        if depth_frame_cache2 is None:
+            return
+            
+        x = event.x()
+        y = event.y()
+        
+        pixmap = self.video_label2.pixmap()
+        if pixmap:
+            ratio_x = 1280 / self.video_label2.width()
+            ratio_y = 720 / self.video_label2.height()
+            img_x = int(x * ratio_x)
+            img_y = int(y * ratio_y)
+            
+            with lock:
+                click_points.append((img_x, img_y))
+                depth = depth_frame_cache1.get_distance(img_x, img_y) if depth_frame_cache1 else 0
+                depth_values.append(depth)
+                
+            # 通过实例信号发送（在主线程）
+            self.signal_emitter.status_update.emit(f"已选点：({img_x}, {img_y}), 深度：{depth:.3f}m")
             
     def on_home(self):
         global target_position
@@ -373,38 +414,64 @@ class RobotControlWindow(QMainWindow):
         self.update_status("已回零")
         
     def on_move_to_point(self):
-        global target_position, click_points, depth_values
+        global target_position, click_points1, depth_values1, click_points2, depth_values2
         
-        if len(click_points) < 3:
+        if len(click_points1) < 3 and len(click_points2) < 3 :
             self.update_status("请至少选择 3 个点！")
             return
             
         with lock:
-            sample_point = click_points[-3:]
-            depth_sample = depth_values[-3:]
+            sample_point1 = click_points1[-3:]
+            depth_sample1 = depth_values1[-3:]
+            sample_point2 = click_points2[-3:]
+            depth_sample2 = depth_values2[-3:]
             target_points = []
-            
-            for i in range(3):
-                x, y = sample_point[i]
-                depth = depth_sample[i]
-                if depth > 0:
-                    pixel_coords = np.array([x, y, 1])
-                    camera_coords = self.tran.image_to_camera(pixel_coords, depth)
-                    base_coords = self.tran.camera_to_base(camera_coords)
-                    target_point = [1000*base_coords[0], 1000*base_coords[1], 1000*base_coords[2]]
-                    target_points.append(target_point)
-            
-            if len(target_points) == 3:
-                normal = calutils1123.get_normal(target_points[-1], target_points[-2], target_points[-3])
-                z = normal
-                y = [0, 1, 0]
-                x = np.cross(y, z)
-                euler = calutils1123.get_tfeuler(x, y, z)
-                target_position = [target_points[-1][0], target_points[-1][1], 
-                                  target_points[-1][2], euler[0], euler[1], euler[2]]
-                self.update_status("目标位姿已设置，机械臂移动中...")
-            else:
-                self.update_status("深度数据无效，请重新选点")
+            if len(click_points1) >= 3:
+                for i in range(3):
+                    x, y = sample_point1[i]
+                    depth = depth_sample1[i]
+                    if depth > 0:
+                        pixel_coords = np.array([x, y, 1])
+                        camera_coords = self.tran.image_to_camera(pixel_coords, depth)
+                        base_coords = self.tran.camera_to_base(camera_coords)
+                        target_point = [1000*base_coords[0], 1000*base_coords[1], 1000*base_coords[2]]
+                        target_points.append(target_point)
+                
+                if len(target_points) == 3:
+                    normal = calutils1123.get_normal(target_points[-1], target_points[-2], target_points[-3])
+                    z = normal
+                    y = [0, 1, 0]
+                    x = np.cross(y, z)
+                    euler = calutils1123.get_tfeuler(x, y, z)
+                    target_position = [target_points[-1][0], target_points[-1][1], 
+                                    target_points[-1][2], euler[0], euler[1], euler[2]]
+                    self.update_status("目标位姿已设置，机械臂移动中...")
+                else:
+                    self.update_status("深度数据无效，请重新选点")
+
+            if len(click_points2) >= 3:
+                for i in range(3):
+                    x, y = sample_point2[i]
+                    depth = depth_sample2[i]
+                    if depth > 0:
+                        pixel_coords = np.array([x, y, 1])
+                        camera_coords = self.tran.image_to_camera(pixel_coords, depth)
+                        end_coords = self.tran.camera_to_end(camera_coords)
+                        base_coords = self.tran.end_to_base(end_coords)
+                        target_point = [1000*base_coords[0], 1000*base_coords[1], 1000*base_coords[2]]
+                        target_points.append(target_point)
+                
+                if len(target_points) == 3:
+                    normal = calutils1123.get_normal(target_points[-1], target_points[-2], target_points[-3])
+                    z = normal
+                    y = [0, 1, 0]
+                    x = np.cross(y, z)
+                    euler = calutils1123.get_tfeuler(x, y, z)
+                    target_position = [target_points[-1][0], target_points[-1][1], 
+                                    target_points[-1][2], euler[0], euler[1], euler[2]]
+                    self.update_status("目标位姿已设置，机械臂移动中...")
+                else:
+                    self.update_status("深度数据无效，请重新选点")
                 
     def on_clear_points(self):
         global click_points, depth_values

@@ -51,6 +51,8 @@ class DualCameraCalibrator:
             'j5': [10, 0, -10],                 # 关节 5:3 个位置（增加运动）
             'j6': [-15, -0, 15]             # 关节 6:3 个位置（范围更集中）
         }
+
+        self.oringin = [0,0,0,0,0,0]
     
     def init_cameras(self):
         """初始化两个相机"""
@@ -189,7 +191,7 @@ class DualCameraCalibrator:
         finally:
             # 清理
             try:
-                self.robot.error_process()
+                self.robot.move_arm_joints(self.oringin)
                 camera.stop_work() if hasattr(camera, 'stop_work') else None
             except:
                 pass
@@ -280,7 +282,7 @@ class DualCameraCalibrator:
             self.calibration_in_progress = False
         try:
             if self.robot:
-                self.robot.error_process()
+                self.robot.move_arm_joints(self.oringin)
         except:
             pass
     
