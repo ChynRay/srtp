@@ -13,12 +13,12 @@ from PyQt5.QtCore import QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import QMainWindow, QApplication, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QFrame
 
-import calutils1123
-from ikcal1 import posetoangle
-from utils.piper_arm import robot_arm
-from dual_camera_calibrator import get_calibrator
-from core import robot
-from core import trans
+# import calutils1123
+# from ikcal1 import posetoangle
+# from utils.piper_arm import robot_arm
+# from dual_camera_calibrator import get_calibrator
+# from core import robot
+# from core import trans
 
 # ==================== 共享资源 ====================
 target_position = None
@@ -44,8 +44,8 @@ def camera1_task():
     pipeline1 = rs.pipeline()
     config1 = rs.config()
     config1.enable_device(TARGET_SERIAL1)
-    config1.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 15)
-    config1.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 15)
+    config1.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 15)
+    config1.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 15)
     pipeline1.start(config1)
     align1 = rs.align(rs.stream.color)
     
@@ -72,8 +72,8 @@ def camera2_task():
     pipeline2 = rs.pipeline()
     config2 = rs.config()
     config2.enable_device(TARGET_SERIAL2)
-    config2.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 15)
-    config2.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 15)
+    config2.enable_stream(rs.stream.color, 1280, 720, rs.format.bgr8, 30)
+    config2.enable_stream(rs.stream.depth, 1280, 720, rs.format.z16, 30)
     pipeline2.start(config2)
     align2 = rs.align(rs.stream.color)
     
@@ -94,26 +94,26 @@ def camera2_task():
     print("相机 2 线程已结束")
 
 # ==================== 机械臂控制线程 ====================
-def robot_task():
-    """机械臂线程：持续监听目标位置，有新目标就移动"""
-    global exit_flag, target_position
+# def robot_task():
+#     """机械臂线程：持续监听目标位置，有新目标就移动"""
+#     global exit_flag, target_position
     
-    arm = robot.RobotArm()
-    while not exit_flag:
-        current_target = None
-        current_angle = None
+#     arm = robot.RobotArm()
+#     while not exit_flag:
+#         current_target = None
+#         current_angle = None
         
-        if target_position is not None:
-            current_target = target_position
-            current_angle = posetoangle(current_target)
-            target_position = None
+#         if target_position is not None:
+#             current_target = target_position
+#             current_angle = posetoangle(current_target)
+#             target_position = None
 
-        if current_angle is not None:
-            print(f"机械臂移动到：{current_target}")
-            arm.move_joints(current_angle)
-            current_target = None
+#         if current_angle is not None:
+#             print(f"机械臂移动到：{current_target}")
+#             arm.move_joints(current_angle)
+#             current_target = None
 
-        time.sleep(0.1)
+#         time.sleep(0.1)
 
 # ==================== PyQt5 信号通信类 ====================
 class SignalEmitter(QObject):
@@ -129,11 +129,11 @@ class RobotControlWindow(QMainWindow):
         self.setWindowTitle("机械臂视觉控制系统（双摄像头）")
         self.setGeometry(200, 200, 1200, 900)
         
-        self.arm = robot.RobotArm()
-        self.tran = trans.Transform()
+        # self.arm = robot.RobotArm()
+        # self.tran = trans.Transform()
         
-        # 标定器（不初始化相机，避免与相机线程冲突）
-        self.calibrator = get_calibrator()
+        # # 标定器（不初始化相机，避免与相机线程冲突）
+        # self.calibrator = get_calibrator()
         # self.calibrator.init_cameras()  # ← 注释掉，由相机线程管理
         # self.calibrator.init_robot()    # ← 注释掉，标定时单独初始化
         
@@ -235,18 +235,18 @@ class RobotControlWindow(QMainWindow):
         main_layout.addWidget(panel)
         
         # ===== 连接按钮信号 =====
-        self.btn_calibrate_cam1.clicked.connect(self.on_calibrate_cam1)
-        self.btn_calibrate_cam2.clicked.connect(self.on_calibrate_cam2)
-        self.btn_home.clicked.connect(self.on_home)
-        self.btn_disable.clicked.connect(self.arm.disable)
-        self.btn_move_to_point.clicked.connect(self.on_move_to_point)
-        self.btn_clear_points.clicked.connect(self.on_clear_points)
-        self.btn_stop.clicked.connect(self.on_emergency_stop)
-        self.btn_caliload.clicked.connect(self.tran.load_calib)
+        # self.btn_calibrate_cam1.clicked.connect(self.on_calibrate_cam1)
+        # self.btn_calibrate_cam2.clicked.connect(self.on_calibrate_cam2)
+        # self.btn_home.clicked.connect(self.on_home)
+        # self.btn_disable.clicked.connect(self.arm.disable)
+        # self.btn_move_to_point.clicked.connect(self.on_move_to_point)
+        # self.btn_clear_points.clicked.connect(self.on_clear_points)
+        # self.btn_stop.clicked.connect(self.on_emergency_stop)
+        # self.btn_caliload.clicked.connect(self.tran.load_calib)
         
         # ===== 连接自定义信号（在主线程）=====
-        self.signal_emitter.status_update.connect(self.update_status)
-        self.signal_emitter.btn_enable.connect(self.on_btn_enable)
+        # self.signal_emitter.status_update.connect(self.update_status)
+        # self.signal_emitter.btn_enable.connect(self.on_btn_enable)
         
     def on_btn_enable(self, cam_id):
         """在主线程启用标定按钮"""
@@ -413,65 +413,65 @@ class RobotControlWindow(QMainWindow):
             target_position = [0, 0, 0, 0, 0, 0]
         self.update_status("已回零")
         
-    def on_move_to_point(self):
-        global target_position, click_points1, depth_values1, click_points2, depth_values2
+    # def on_move_to_point(self):
+    #     global target_position, click_points1, depth_values1, click_points2, depth_values2
         
-        if len(click_points1) < 3 and len(click_points2) < 3 :
-            self.update_status("请至少选择 3 个点！")
-            return
+    #     if len(click_points1) < 3 and len(click_points2) < 3 :
+    #         self.update_status("请至少选择 3 个点！")
+    #         return
             
-        with lock:
-            sample_point1 = click_points1[-3:]
-            depth_sample1 = depth_values1[-3:]
-            sample_point2 = click_points2[-3:]
-            depth_sample2 = depth_values2[-3:]
-            target_points = []
-            if len(click_points1) >= 3:
-                for i in range(3):
-                    x, y = sample_point1[i]
-                    depth = depth_sample1[i]
-                    if depth > 0:
-                        pixel_coords = np.array([x, y, 1])
-                        camera_coords = self.tran.image_to_camera(pixel_coords, depth)
-                        base_coords = self.tran.camera_to_base(camera_coords)
-                        target_point = [1000*base_coords[0], 1000*base_coords[1], 1000*base_coords[2]]
-                        target_points.append(target_point)
+    #     with lock:
+    #         sample_point1 = click_points1[-3:]
+    #         depth_sample1 = depth_values1[-3:]
+    #         sample_point2 = click_points2[-3:]
+    #         depth_sample2 = depth_values2[-3:]
+    #         target_points = []
+    #         if len(click_points1) >= 3:
+    #             for i in range(3):
+    #                 x, y = sample_point1[i]
+    #                 depth = depth_sample1[i]
+    #                 if depth > 0:
+    #                     pixel_coords = np.array([x, y, 1])
+    #                     camera_coords = self.tran.image_to_camera(pixel_coords, depth)
+    #                     base_coords = self.tran.camera_to_base(camera_coords)
+    #                     target_point = [1000*base_coords[0], 1000*base_coords[1], 1000*base_coords[2]]
+    #                     target_points.append(target_point)
                 
-                if len(target_points) == 3:
-                    normal = calutils1123.get_normal(target_points[-1], target_points[-2], target_points[-3])
-                    z = normal
-                    y = [0, 1, 0]
-                    x = np.cross(y, z)
-                    euler = calutils1123.get_tfeuler(x, y, z)
-                    target_position = [target_points[-1][0], target_points[-1][1], 
-                                    target_points[-1][2], euler[0], euler[1], euler[2]]
-                    self.update_status("目标位姿已设置，机械臂移动中...")
-                else:
-                    self.update_status("深度数据无效，请重新选点")
+    #             if len(target_points) == 3:
+    #                 normal = calutils1123.get_normal(target_points[-1], target_points[-2], target_points[-3])
+    #                 z = normal
+    #                 y = [0, 1, 0]
+    #                 x = np.cross(y, z)
+    #                 euler = calutils1123.get_tfeuler(x, y, z)
+    #                 target_position = [target_points[-1][0], target_points[-1][1], 
+    #                                 target_points[-1][2], euler[0], euler[1], euler[2]]
+    #                 self.update_status("目标位姿已设置，机械臂移动中...")
+    #             else:
+    #                 self.update_status("深度数据无效，请重新选点")
 
-            if len(click_points2) >= 3:
-                for i in range(3):
-                    x, y = sample_point2[i]
-                    depth = depth_sample2[i]
-                    if depth > 0:
-                        pixel_coords = np.array([x, y, 1])
-                        camera_coords = self.tran.image_to_camera(pixel_coords, depth)
-                        end_coords = self.tran.camera_to_end(camera_coords)
-                        base_coords = self.tran.end_to_base(end_coords)
-                        target_point = [1000*base_coords[0], 1000*base_coords[1], 1000*base_coords[2]]
-                        target_points.append(target_point)
+    #         if len(click_points2) >= 3:
+    #             for i in range(3):
+    #                 x, y = sample_point2[i]
+    #                 depth = depth_sample2[i]
+    #                 if depth > 0:
+    #                     pixel_coords = np.array([x, y, 1])
+    #                     camera_coords = self.tran.image_to_camera(pixel_coords, depth)
+    #                     end_coords = self.tran.camera_to_end(camera_coords)
+    #                     base_coords = self.tran.end_to_base(end_coords)
+    #                     target_point = [1000*base_coords[0], 1000*base_coords[1], 1000*base_coords[2]]
+    #                     target_points.append(target_point)
                 
-                if len(target_points) == 3:
-                    normal = calutils1123.get_normal(target_points[-1], target_points[-2], target_points[-3])
-                    z = normal
-                    y = [0, 1, 0]
-                    x = np.cross(y, z)
-                    euler = calutils1123.get_tfeuler(x, y, z)
-                    target_position = [target_points[-1][0], target_points[-1][1], 
-                                    target_points[-1][2], euler[0], euler[1], euler[2]]
-                    self.update_status("目标位姿已设置，机械臂移动中...")
-                else:
-                    self.update_status("深度数据无效，请重新选点")
+    #             if len(target_points) == 3:
+    #                 normal = calutils1123.get_normal(target_points[-1], target_points[-2], target_points[-3])
+    #                 z = normal
+    #                 y = [0, 1, 0]
+    #                 x = np.cross(y, z)
+    #                 euler = calutils1123.get_tfeuler(x, y, z)
+    #                 target_position = [target_points[-1][0], target_points[-1][1], 
+    #                                 target_points[-1][2], euler[0], euler[1], euler[2]]
+    #                 self.update_status("目标位姿已设置，机械臂移动中...")
+    #             else:
+    #                 self.update_status("深度数据无效，请重新选点")
                 
     def on_clear_points(self):
         global click_points, depth_values
@@ -501,12 +501,12 @@ class RobotControlWindow(QMainWindow):
 # ==================== 主函数 ====================
 if __name__ == "__main__":
     # ===== 启动后台线程 =====
-    # camera_thread1 = threading.Thread(target=camera1_task)
-    # camera_thread2 = threading.Thread(target=camera2_task)
+    camera_thread1 = threading.Thread(target=camera1_task)
+    camera_thread2 = threading.Thread(target=camera2_task)
     # robot_thread = threading.Thread(target=robot_task)
     
-    # camera_thread1.start()
-    # camera_thread2.start()
+    camera_thread1.start()
+    camera_thread2.start()
     # robot_thread.start()
     
     # ===== 启动 PyQt5 GUI（必须在创建任何 QObject 之前）=====
@@ -515,8 +515,8 @@ if __name__ == "__main__":
     window.show()
     
     # ===== 等待线程结束 =====
-    # camera_thread1.join()
-    # camera_thread2.join()
+    camera_thread1.join()
+    camera_thread2.join()
     # robot_thread.join()
     
     print("程序已退出")
