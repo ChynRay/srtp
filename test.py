@@ -17,6 +17,8 @@ import calutils1123
 from ikcal1 import posetoangle
 from utils.piper_arm import robot_arm
 from dual_camera_calibrator import get_calibrator
+from core import robot
+from core import trans
 
 # ==================== 共享资源 ====================
 target_position = None
@@ -33,45 +35,6 @@ depth_frame_cache2 = None
 # ==================== 相机配置 ====================
 TARGET_SERIAL1 = "333422302278"
 TARGET_SERIAL2 = "243222074585"
-
-# ==================== 机械臂控制类 ====================
-class Transform:
-    def __init__(self):
-        self.pixel_coords = None
-        self.robot = robot_arm()
-        '初始化相机参数'
-        with open('calibration_results/calibration_data.pickle', 'rb') as f:
-            data = pickle.load(f)
-        self.camera_intrinsics_matrix = data['intrinsics_matrix']
-        self.camera_dist_coeffs = data['dist_coeffs']
-        self.cam2base_H = data['cam2base_H']
-               
-    def set_extrinsics(self):
-        cam2base_H = self.cam2base_H     
-        t, R, scale, shear = tfs.affines.decompose(cam2base_H)
-        return t, R
-    
-    def image_to_camera(self, pixel_coords, depth_value):
-        z = depth_value
-        camera_intrinsics_matrix_inv = np.linalg.inv(self.camera_intrinsics_matrix)
-        camera_coords = z * camera_intrinsics_matrix_inv @ pixel_coords
-        return camera_coords
-    
-    def camera_to_base(self, camera_coords):
-        t, R = self.set_extrinsics()
-        base_coords = np.dot(R, camera_coords) + t
-        return base_coords
-    
-    def robot_move(self, target_pose):
-        self.robot.enable_arm(True)
-        time.sleep(1)
-        self.robot.move_arm_joints(target_pose)
-        return True
-    
-    def robot_disable(self):
-        self.robot.enable_arm(False)
-        print("机械臂已禁用")
-        return True
 
 # ==================== 相机采集线程 ====================
 def camera1_task():
@@ -135,7 +98,7 @@ def robot_task():
     """机械臂线程：持续监听目标位置，有新目标就移动"""
     global exit_flag, target_position
     
-    tran = Transform()
+    tran = trans.Transform()
     while not exit_flag:
         current_target = None
         current_angle = None
@@ -169,7 +132,7 @@ class RobotControlWindow(QMainWindow):
         self.setWindowTitle("机械臂视觉控制系统（双摄像头）")
         self.setGeometry(200, 200, 1200, 900)
         
-        self.tran = Transform()
+        self.tran = trans.Transform()
         
         # 标定器（不初始化相机，避免与相机线程冲突）
         self.calibrator = get_calibrator()
@@ -244,16 +207,13 @@ class RobotControlWindow(QMainWindow):
         
         # 原有按钮
         self.btn_home = QPushButton("回零位")
-        self.btn_grip_open = QPushButton("打开夹爪")
-        self.btn_grip_close = QPushButton("关闭夹爪")
         self.btn_move_to_point = QPushButton("移动到选点")
         self.btn_clear_points = QPushButton("清除选点")
         self.btn_stop = QPushButton("🛑 紧急停止")
         self.btn_stop.setStyleSheet("background-color: #cc0000; color: white; font-weight: bold;")
         
         for btn in [self.btn_calibrate_cam1, self.btn_calibrate_cam2,
-                    self.btn_home, self.btn_grip_open, 
-                    self.btn_grip_close, self.btn_move_to_point, 
+                    self.btn_home, self.btn_move_to_point, 
                     self.btn_clear_points, self.btn_stop]:
             btn.setMinimumHeight(45)
             btn_layout.addWidget(btn)
@@ -411,10 +371,6 @@ class RobotControlWindow(QMainWindow):
         with lock:
             target_position = [0, 0, 0, 0, 0, 0]
         self.update_status("已回零")
-        
-    def on_grip(self, open_state):
-        self.tran.robot.enable_arm(True)
-        self.update_status(f"夹爪{'打开' if open_state else '关闭'}")
         
     def on_move_to_point(self):
         global target_position, click_points, depth_values
