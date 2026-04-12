@@ -478,13 +478,13 @@ class RobotControlWindow(QMainWindow):
 # ==================== 主函数 ====================
 if __name__ == "__main__":
     # ===== 启动后台线程 =====
-    # camera_thread1 = threading.Thread(target=camera1_task)
-    # camera_thread2 = threading.Thread(target=camera2_task)
-    # robot_thread = threading.Thread(target=robot_task)
+    camera_thread1 = threading.Thread(target=camera1_task)
+    camera_thread2 = threading.Thread(target=camera2_task)
+    robot_thread = threading.Thread(target=robot_task)
     
-    # camera_thread1.start()
-    # camera_thread2.start()
-    # robot_thread.start()
+    camera_thread1.start()
+    camera_thread2.start()
+    robot_thread.start()
     
     # ===== 启动 PyQt5 GUI（必须在创建任何 QObject 之前）=====
     app = QApplication(sys.argv)
@@ -492,8 +492,8 @@ if __name__ == "__main__":
     window.show()
     
     # ===== 等待线程结束 =====
-    # camera_thread1.join()
-    # camera_thread2.join()
-    # robot_thread.join()
+    camera_thread1.join()
+    camera_thread2.join()
+    robot_thread.join()
     
     print("程序已退出")
