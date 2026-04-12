@@ -43,9 +43,9 @@ depth_frame_cache2 = None
 TARGET_SERIAL1 = "333422302278"
 TARGET_SERIAL2 = "243222074585"
 # 相机1分辨率/帧率（D400系列通用稳定参数）
-CAM1_W, CAM1_H, CAM1_FPS = 640, 480, 30
+CAM1_W, CAM1_H, CAM1_FPS = 640, 480, 15
 # 相机2分辨率/帧率（D400系列通用稳定参数）
-CAM2_W, CAM2_H, CAM2_FPS = 1280, 720, 15
+CAM2_W, CAM2_H, CAM2_FPS = 640, 480, 15
 
 # ==================== 相机采集线程（核心修复：锁作用域+异常捕获+参数适配+硬件重置）====================
 def camera1_task():
@@ -205,7 +205,7 @@ class RobotControlWindow(QMainWindow):
         
         # 摄像头 1 显示
         self.video_label1 = QLabel("摄像头 1 画面")
-        self.video_label1.setFixedSize(800, 450)
+        self.video_label1.setFixedSize(640, 480)
         self.video_label1.setStyleSheet("border: 2px solid #00ff00; background-color: #2a2a2a; color: white;")
         self.video_label1.mousePressEvent = self.on_mouse_click1
         left_layout.addWidget(self.video_label1)
@@ -225,7 +225,7 @@ class RobotControlWindow(QMainWindow):
         
         # 摄像头 2 显示
         self.video_label2 = QLabel("摄像头 2 画面")
-        self.video_label2.setFixedSize(800, 450)
+        self.video_label2.setFixedSize(640, 480)
         self.video_label2.setStyleSheet("border: 2px solid #0088ff; background-color: #2a2a2a; color: white;")
         self.video_label2.mousePressEvent = self.on_mouse_click2
         left_layout.addWidget(self.video_label2)
