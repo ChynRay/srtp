@@ -174,9 +174,11 @@ class RobotControlWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("机械臂视觉控制系统（双摄像头）")
         self.setGeometry(200, 200, 1200, 900)
-        
+        path1 = "calibration_results/calibration_data1.pickle"
+        path2 = "calibration_results/calibration_data2.pickle"
         self.arm = robot.RobotArm()
-        self.tran = trans.Transform()
+        self.tran1 = trans.Transform(path=path1)
+        self.tran2 = trans.Transform(path=path2)
         
         # 标定器（不初始化相机，避免与相机线程冲突）
         self.calibrator = get_calibrator()
@@ -251,8 +253,10 @@ class RobotControlWindow(QMainWindow):
         self.btn_calibrate_cam2.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
         self.btn_disable = QPushButton("失能")
         self.btn_disable.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
-        self.btn_caliload = QPushButton("加载标定数据")
-        self.btn_caliload.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
+        self.btn_caliload1 = QPushButton("加载相机1标定数据")
+        self.btn_caliload1.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
+        self.btn_caliload2 = QPushButton("加载相机2标定数据")
+        self.btn_caliload2.setStyleSheet("background-color: #0066cc; color: white; font-weight: bold;")
         
         # 原有按钮
         self.btn_home = QPushButton("回零位")
@@ -263,7 +267,7 @@ class RobotControlWindow(QMainWindow):
         
         for btn in [self.btn_calibrate_cam1, self.btn_calibrate_cam2,
                     self.btn_home, self.btn_move_to_point, 
-                    self.btn_clear_points, self.btn_stop, self.btn_disable, self.btn_caliload]:
+                    self.btn_clear_points, self.btn_stop, self.btn_disable, self.btn_caliload1,self.btn_caliload2]:
             btn.setMinimumHeight(45)
             btn_layout.addWidget(btn)
         
@@ -285,7 +289,8 @@ class RobotControlWindow(QMainWindow):
         self.btn_move_to_point.clicked.connect(self.on_move_to_point)
         self.btn_clear_points.clicked.connect(self.on_clear_points)
         self.btn_stop.clicked.connect(self.on_emergency_stop)
-        self.btn_caliload.clicked.connect(self.tran.load_calib)
+        self.btn_caliload1.clicked.connect(self.tran1.load_calib)
+        self.btn_caliload2.clicked.connect(self.tran2.load_calib)
         
         # ===== 连接自定义信号（在主线程，保留）=====
         self.signal_emitter.status_update.connect(self.update_status)
@@ -519,8 +524,8 @@ class RobotControlWindow(QMainWindow):
                     depth = depth_sample1[i]
                     if depth > 0:
                         pixel_coords = np.array([x, y, 1])
-                        camera_coords = self.tran.image_to_camera(pixel_coords, depth)
-                        base_coords = self.tran.camera_to_base(camera_coords)
+                        camera_coords = self.tran1.image_to_camera(pixel_coords, depth)
+                        base_coords = self.tran1.camera_to_base(camera_coords)
                         target_point = [1000*base_coords[0], 1000*base_coords[1], 1000*base_coords[2]]
                         target_points.append(target_point)
                 
@@ -541,9 +546,9 @@ class RobotControlWindow(QMainWindow):
                     depth = depth_sample2[i]
                     if depth > 0:
                         pixel_coords = np.array([x, y, 1])
-                        camera_coords = self.tran.image_to_camera(pixel_coords, depth)
-                        end_coords = self.tran.camera_to_end(camera_coords)
-                        base_coords = self.tran.end_to_base(end_coords)
+                        camera_coords = self.tran2.image_to_camera(pixel_coords, depth)
+                        end_coords = self.tran2.camera_to_end(camera_coords)
+                        base_coords = self.tran2.end_to_base(end_coords)
                         target_point = [1000*base_coords[0], 1000*base_coords[1], 1000*base_coords[2]]
                         target_points.append(target_point)
                 

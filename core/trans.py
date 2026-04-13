@@ -4,14 +4,15 @@ import utils.piper_arm
 import transforms3d as tfs
 import calutils1123
 
-class Transform:
-    def __init__(self):
+class Transform():
+    def __init__(self,path):
         self.intrinsic = None
         self.cam2base = None
         self.robot = utils.piper_arm.robot_arm()
+        self.path = path
     
     def load_calib(self):
-        with open('calibration_results/calibration_data.pickle', 'rb') as f:
+        with open(self.path, 'rb') as f:
             data = pickle.load(f)
         self.camera_intrinsics_matrix = data['intrinsics_matrix']
         self.camera_dist_coeffs = data['dist_coeffs']
