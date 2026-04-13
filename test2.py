@@ -12,12 +12,12 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import QMainWindow, QApplication, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QFrame
-# import calutils1123
-# from ikcal1 import posetoangle
-# from utils.piper_arm import robot_arm
-# from dual_camera_calibrator import get_calibrator
-# from core import robot
-# from core import trans
+import calutils1123
+from ikcal1 import posetoangle
+from utils.piper_arm import robot_arm
+from dual_camera_calibrator import get_calibrator
+from core import robot
+from core import trans
 
 # ==================== 共享资源（修复：补全双相机独立变量+初始化）====================
 target_position = None
@@ -142,24 +142,24 @@ def camera2_task():
     print("【相机2】线程已结束")
 
 # ==================== 机械臂控制线程（保留原逻辑，仅注释）====================
-# def robot_task():
-#     """机械臂线程：持续监听目标位置，有新目标就移动"""
-#     global exit_flag, target_position
+def robot_task():
+    """机械臂线程：持续监听目标位置，有新目标就移动"""
+    global exit_flag, target_position
     
-#     arm = robot.RobotArm()
-#     while not exit_flag:
-#         current_target = None
-#         current_angle = None
+    arm = robot.RobotArm()
+    while not exit_flag:
+        current_target = None
+        current_angle = None
         
-#         if target_position is not None:
-#             current_target = target_position
-#             current_angle = posetoangle(current_target)
-#             target_position = None
-#         if current_angle is not None:
-#             print(f"机械臂移动到：{current_target}")
-#             arm.move_joints(current_angle)
-#             current_target = None
-#         time.sleep(0.1)
+        if target_position is not None:
+            current_target = target_position
+            current_angle = posetoangle(current_target)
+            target_position = None
+        if current_angle is not None:
+            print(f"机械臂移动到：{current_target}")
+            arm.move_joints(current_angle)
+            current_target = None
+        time.sleep(0.1)
 
 # ==================== PyQt5 信号通信类（保留原逻辑）====================
 class SignalEmitter(QObject):
@@ -175,11 +175,11 @@ class RobotControlWindow(QMainWindow):
         self.setWindowTitle("机械臂视觉控制系统（双摄像头）")
         self.setGeometry(200, 200, 1200, 900)
         
-        # self.arm = robot.RobotArm()
-        # self.tran = trans.Transform()
+        self.arm = robot.RobotArm()
+        self.tran = trans.Transform()
         
-        # # 标定器（不初始化相机，避免与相机线程冲突）
-        # self.calibrator = get_calibrator()
+        # 标定器（不初始化相机，避免与相机线程冲突）
+        self.calibrator = get_calibrator()
         # self.calibrator.init_cameras()  # ← 注释掉，由相机线程管理
         # self.calibrator.init_robot()    # ← 注释掉，标定时单独初始化
         
@@ -278,14 +278,14 @@ class RobotControlWindow(QMainWindow):
         main_layout.addWidget(panel)
         
         # ===== 连接按钮信号（保留原逻辑）=====
-        # self.btn_calibrate_cam1.clicked.connect(self.on_calibrate_cam1)
-        # self.btn_calibrate_cam2.clicked.connect(self.on_calibrate_cam2)
-        # self.btn_home.clicked.connect(self.on_home)
-        # self.btn_disable.clicked.connect(self.arm.disable)
+        self.btn_calibrate_cam1.clicked.connect(self.on_calibrate_cam1)
+        self.btn_calibrate_cam2.clicked.connect(self.on_calibrate_cam2)
+        self.btn_home.clicked.connect(self.on_home)
+        self.btn_disable.clicked.connect(self.arm.disable)
         self.btn_move_to_point.clicked.connect(self.on_move_to_point)
         self.btn_clear_points.clicked.connect(self.on_clear_points)
-        # self.btn_stop.clicked.connect(self.on_emergency_stop)
-        # self.btn_caliload.clicked.connect(self.tran.load_calib)
+        self.btn_stop.clicked.connect(self.on_emergency_stop)
+        self.btn_caliload.clicked.connect(self.tran.load_calib)
         
         # ===== 连接自定义信号（在主线程，保留）=====
         self.signal_emitter.status_update.connect(self.update_status)
@@ -299,46 +299,68 @@ class RobotControlWindow(QMainWindow):
             self.btn_calibrate_cam2.setEnabled(True)
         
     def on_calibrate_cam1(self):
-        """启动相机 1 标定线程（保留原逻辑）"""
+        """启动相机 1 标定线程"""
         if self.calibrator.get_calibration_status():
             self.update_status("标定正在进行中，请等待完成")
             return
         
         self.btn_calibrate_cam1.setEnabled(False)
+        
+        # 【关键修改】创建一个专用的标定器实例，传入当前的 pipeline
+        # 假设 pipeline1 是全局变量或在类中可以访问
+        global pipeline1 
+        ext_pipes = {1: pipeline1} 
+        
+        # 获取带有外部管道的标定器实例
+        calibrator_instance = get_calibrator(external_pipelines=ext_pipes)
+        
         self.calibration_thread1 = threading.Thread(
-            target=self._run_calibration,
-            args=(1, "相机 1")
+            target=self._run_calibration_with_instance,
+            args=(calibrator_instance, 1, "相机 1")
         )
         self.calibration_thread1.start()
     
     def on_calibrate_cam2(self):
-        """启动相机 2 标定线程（保留原逻辑）"""
+        """启动相机 2 标定线程"""
         if self.calibrator.get_calibration_status():
             self.update_status("标定正在进行中，请等待完成")
             return
         
         self.btn_calibrate_cam2.setEnabled(False)
-        self.calibration_thread2 = threading.Thread(
-            target=self._run_calibration,
-            args=(2, "相机 2")
+        
+        # 【关键修改】创建一个专用的标定器实例，传入当前的 pipeline
+        # 假设 pipeline1 是全局变量或在类中可以访问
+        global pipeline2 
+        ext_pipes = {2: pipeline2} 
+        
+        # 获取带有外部管道的标定器实例
+        calibrator_instance = get_calibrator(external_pipelines=ext_pipes)
+        
+        self.calibration_thread1 = threading.Thread(
+            target=self._run_calibration_with_instance,
+            args=(calibrator_instance, 2, "相机 2")
         )
-        self.calibration_thread2.start()
+        self.calibration_thread1.start()
     
-    def _run_calibration(self, cam_id, cam_name):
-        """执行标定（后台线程，保留原逻辑）"""
+    def _run_calibration_with_instance(self, calib_inst, cam_id, cam_name):
+        """使用特定标定器实例执行标定"""
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         cal_root = f"calibrationeyetohand_res/{cam_name}_{timestamp}"
         
         def status_callback(msg):
-            # 通过信号发送到主线程
             self.signal_emitter.status_update.emit(msg)
-        result = self.calibrator.calibrate_camera(
+            
+        # 注意：这里不需要再 init_cameras，因为 pipeline 已经通过构造函数传入
+        # 但需要确保机械臂已初始化
+        if not calib_inst.robot:
+            calib_inst.init_robot()
+            
+        result = calib_inst.calibrate_camera(
             cam_id=cam_id,
             cal_root=cal_root,
             callback=status_callback
         )
         
-        # 通过信号在主线程恢复按钮状态
         self.signal_emitter.btn_enable.emit(cam_id)
         
         if result:
@@ -502,15 +524,15 @@ class RobotControlWindow(QMainWindow):
                         target_point = [1000*base_coords[0], 1000*base_coords[1], 1000*base_coords[2]]
                         target_points.append(target_point)
                 
-                # if len(target_points) == 3:
-                #     normal = calutils1123.get_normal(target_points[-1], target_points[-2], target_points[-3])
-                #     z = normal
-                #     y = [0, 1, 0]
-                #     x = np.cross(y, z)
-                #     euler = calutils1123.get_tfeuler(x, y, z)
-                #     target_position = [target_points[-1][0], target_points[-1][1], 
-                #                     target_points[-1][2], euler[0], euler[1], euler[2]]
-                #     self.update_status("目标位姿已设置，机械臂移动中...")
+                if len(target_points) == 3:
+                    normal = calutils1123.get_normal(target_points[-1], target_points[-2], target_points[-3])
+                    z = normal
+                    y = [0, 1, 0]
+                    x = np.cross(y, z)
+                    euler = calutils1123.get_tfeuler(x, y, z)
+                    target_position = [target_points[-1][0], target_points[-1][1], 
+                                    target_points[-1][2], euler[0], euler[1], euler[2]]
+                    self.update_status("目标位姿已设置，机械臂移动中...")
                 else:
                     self.update_status("深度数据无效，请重新选点")
             if len(click_points2) >= 3:
@@ -525,17 +547,17 @@ class RobotControlWindow(QMainWindow):
                         target_point = [1000*base_coords[0], 1000*base_coords[1], 1000*base_coords[2]]
                         target_points.append(target_point)
                 
-                # if len(target_points) == 3:
-                #     normal = calutils1123.get_normal(target_points[-1], target_points[-2], target_points[-3])
-                #     z = normal
-                #     y = [0, 1, 0]
-                #     x = np.cross(y, z)
-                #     euler = calutils1123.get_tfeuler(x, y, z)
-                #     target_position = [target_points[-1][0], target_points[-1][1], 
-                #                     target_points[-1][2], euler[0], euler[1], euler[2]]
-                #     self.update_status("目标位姿已设置，机械臂移动中...")
-                # else:
-                #     self.update_status("深度数据无效，请重新选点")
+                if len(target_points) == 3:
+                    normal = calutils1123.get_normal(target_points[-1], target_points[-2], target_points[-3])
+                    z = normal
+                    y = [0, 1, 0]
+                    x = np.cross(y, z)
+                    euler = calutils1123.get_tfeuler(x, y, z)
+                    target_position = [target_points[-1][0], target_points[-1][1], 
+                                    target_points[-1][2], euler[0], euler[1], euler[2]]
+                    self.update_status("目标位姿已设置，机械臂移动中...")
+                else:
+                    self.update_status("深度数据无效，请重新选点")
                 
     def on_clear_points(self):
         """清除选点（修复：清空双相机独立变量+原兼容变量）"""
@@ -579,11 +601,11 @@ if __name__ == "__main__":
     # ===== 启动后台线程（设为守护线程，随主程序退出）=====
     camera_thread1 = threading.Thread(target=camera1_task, daemon=True)
     camera_thread2 = threading.Thread(target=camera2_task, daemon=True)
-    # robot_thread = threading.Thread(target=robot_task, daemon=True)
+    robot_thread = threading.Thread(target=robot_task, daemon=True)
     
     camera_thread1.start()
     camera_thread2.start()
-    # robot_thread.start()
+    robot_thread.start()
     
     # 等待相机初始化
     time.sleep(1.5)

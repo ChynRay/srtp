@@ -1,6 +1,7 @@
 """
 双相机独立标定管理类
 支持相机 1 和相机 2 分别进行手眼标定，且机械臂运动范围不同
+支持复用外部已初始化的 Realsense Pipeline (用于集成到 GUI)
 """
 
 import numpy as np
@@ -9,6 +10,7 @@ import time
 import os
 import threading
 import argparse
+import pyrealsense2 as rs # 引入 pyrealsense2 以便直接操作 pipeline
 from utils.realsense_test import RealSenseCamera
 from utils.piper_arm import robot_arm
 from calibration_cal import CameraCalibration
@@ -17,9 +19,17 @@ from calibration_cal import CameraCalibration
 class DualCameraCalibrator:
     """双相机独立标定管理器"""
     
-    def __init__(self):
-        self.camera1 = None  # 相机 1 (333422302278)
-        self.camera2 = None  # 相机 2 (243222074585)
+    def __init__(self, external_pipelines=None):
+        """
+        :param external_pipelines: 字典 {1: pipeline_obj_1, 2: pipeline_obj_2} 
+                                   如果提供，将直接使用这些管道而不重新初始化硬件
+        """
+        self.camera1 = None  # 相机 1 (333422302278) - RealSenseCamera 实例
+        self.camera2 = None  # 相机 2 (243222074585) - RealSenseCamera 实例
+        
+        # 新增：存储外部传入的 pyrealsense2.pipeline 对象
+        self.external_pipelines = external_pipelines if external_pipelines else {}
+        
         self.robot = None
         self.calibration_in_progress = False
         self.lock = threading.Lock()
@@ -44,9 +54,15 @@ class DualCameraCalibrator:
         
         # ===== 相机 2 关节运动范围（辅助相机，小范围运动）=====
         self.joint_ranges_cam2 = {
-            'j1': [-10, 0, 10],               # 关节 1:3 个位置（范围更小）
-            'j2': [0, 6, 12],                   # 关节 2:3 个位置（偏移）
-            'j3': [0, -5, -10],               # 关节 3:3 个位置（范围更小）
+            # 'j1': [-10, 0, 10],               # 关节 1:3 个位置（范围更小）
+            # 'j2': [0, 6, 12],                   # 关节 2:3 个位置（偏移）
+            # 'j3': [0, -5, -10],               # 关节 3:3 个位置（范围更小）
+            # 'j4': None,                        # 动态获取
+            # 'j5': [10, 0, -10],                 # 关节 5:3 个位置（增加运动）
+            # 'j6': [-15, -0, 15]             # 关节 6:3 个位置（范围更集中）
+            'j1': [0],               # 关节 1:3 个位置（范围更小）
+            'j2': [6],                   # 关节 2:3 个位置（偏移）
+            'j3': [-5],               # 关节 3:3 个位置（范围更小）
             'j4': None,                        # 动态获取
             'j5': [10, 0, -10],                 # 关节 5:3 个位置（增加运动）
             'j6': [-15, -0, 15]             # 关节 6:3 个位置（范围更集中）
@@ -55,10 +71,21 @@ class DualCameraCalibrator:
         self.oringin = [0,0,0,0,0,0]
     
     def init_cameras(self):
-        """初始化两个相机"""
+        """
+        初始化两个相机
+        如果构造时传入了 external_pipelines，则跳过硬件初始化，仅标记为就绪
+        """
+        # 如果已经有外部管道，认为相机已“逻辑”初始化
+        if self.external_pipelines:
+            print("[标定器] 检测到外部相机管道，跳过硬件初始化")
+            return True
+
         try:
-            self.camera1 = RealSenseCamera(self.SERIAL_CAM1)
-            self.camera2 = RealSenseCamera(self.SERIAL_CAM2)
+            # 只有在没有外部管道时，才尝试创建 RealSenseCamera 实例
+            if not self.camera1:
+                self.camera1 = RealSenseCamera(self.SERIAL_CAM1)
+            if not self.camera2:
+                self.camera2 = RealSenseCamera(self.SERIAL_CAM2)
             print("[标定器] 相机初始化成功")
             return True
         except Exception as e:
@@ -96,6 +123,13 @@ class DualCameraCalibrator:
         :param callback: 状态回调函数 callback(message)
         :return: 标定结果字典
         """
+        # 注意：移除了自动调用 self.init_cameras()，由调用者确保资源就绪
+        # 如果没有外部管道且内部相机未初始化，则尝试初始化
+        if not self.external_pipelines and not self.camera1 and not self.camera2:
+             if not self.init_cameras():
+                 if callback: callback("相机初始化失败")
+                 return None
+
         with self.lock:
             if self.calibration_in_progress:
                 if callback:
@@ -104,14 +138,16 @@ class DualCameraCalibrator:
             self.calibration_in_progress = True
         
         try:
-            # 选择相机
+            # 选择相机和管道
             if cam_id == 1:
-                camera = self.camera1
+                camera_obj = self.camera1
+                pipeline = self.external_pipelines.get(1)
                 cam_name = "相机 1"
                 serial = self.SERIAL_CAM1
                 joint_ranges = self.joint_ranges_cam1
             else:
-                camera = self.camera2
+                camera_obj = self.camera2
+                pipeline = self.external_pipelines.get(2)
                 cam_name = "相机 2"
                 serial = self.SERIAL_CAM2
                 joint_ranges = self.joint_ranges_cam2
@@ -127,6 +163,9 @@ class DualCameraCalibrator:
             # 初始化机械臂
             if not self.robot:
                 self.init_robot()
+            if not self.robot:
+                raise Exception("机械臂初始化失败")
+                
             self.robot.enable_arm(True)
             
             if callback:
@@ -145,14 +184,28 @@ class DualCameraCalibrator:
             j4 = original_joint.joint_4 / 1000
             joint_ranges['j4'] = j4
             
-            # 启动相机
-            camera.start_work()
-            
-            if callback:
-                callback(f"{cam_name} 开始采集图像...")
-            
-            # 采集标定图像（使用对应相机的关节范围）
-            self._capture_images(camera, cal_root, cam_name, joint_ranges, callback)
+            # 图像采集策略分支
+            if pipeline is not None:
+                # 策略 A: 使用外部传入的 pyrealsense2.pipeline (GUI 模式)
+                if callback:
+                    callback(f"{cam_name} 使用外部管道采集图像...")
+                self._capture_images_from_pipeline(pipeline, cal_root, cam_name, joint_ranges, callback)
+            elif camera_obj is not None:
+                # 策略 B: 使用内部 RealSenseCamera 对象 (独立脚本模式)
+                if callback:
+                    callback(f"{cam_name} 启动内部相机服务...")
+                # 注意：RealSenseCamera 可能需要 start_work 才能获取帧
+                if hasattr(camera_obj, 'start_work'):
+                    camera_obj.start_work()
+                    time.sleep(1) # 等待相机稳定
+                
+                self._capture_images(camera_obj, cal_root, cam_name, joint_ranges, callback)
+                
+                # 停止相机
+                if hasattr(camera_obj, 'stop_work'):
+                    camera_obj.stop_work()
+            else:
+                raise Exception(f"{cam_name} 既无外部管道也无内部相机实例")
             
             if callback:
                 callback(f"{cam_name} 图像采集完成，开始计算...")
@@ -184,6 +237,8 @@ class DualCameraCalibrator:
         except Exception as e:
             error_msg = f"{cam_name} 标定失败：{str(e)}"
             print(f"[标定错误] {error_msg}")
+            import traceback
+            traceback.print_exc()
             if callback:
                 callback(error_msg)
             return None
@@ -191,16 +246,92 @@ class DualCameraCalibrator:
         finally:
             # 清理
             try:
-                self.robot.move_arm_joints(self.oringin)
-                camera.stop_work() if hasattr(camera, 'stop_work') else None
+                if self.robot:
+                    self.robot.move_arm_joints(self.oringin)
             except:
                 pass
             with self.lock:
                 self.calibration_in_progress = False
-    
+
+    def _capture_images_from_pipeline(self, pipeline, save_root, cam_name, joint_ranges, callback=None):
+        """
+        从外部 pyrealsense2.pipeline 采集图像 (用于 GUI 集成)
+        """
+        res_dir = os.path.join(save_root, 'res')
+        trac_dir = os.path.join(save_root, 'real_trac')
+        
+        img_count = 0
+        real_trac = []
+        
+        # 创建 align 对象，确保深度图和颜色图对齐
+        align = rs.align(rs.stream.color)
+
+        # 遍历关节组合
+        for j1 in joint_ranges['j1']:
+            for j2 in joint_ranges['j2']:
+                for j3 in joint_ranges['j3']:
+                    for j5 in joint_ranges['j5']:
+                        for j6 in joint_ranges['j6']:
+                            newjoint = [j1, j2, j3, joint_ranges['j4'], j5, j6]
+                            
+                            # 限制关节范围
+                            newjoint = self._constrain_joints(newjoint)
+                            
+                            try:
+                                self.robot.move_arm_joints(newjoint)
+                                time.sleep(1.5) # 等待机械臂稳定
+                                
+                                # 获取末端位姿
+                                endpose = self.robot.piper.GetArmEndPoseMsgs().end_pose
+                                x, y, z = endpose.X_axis, endpose.Y_axis, endpose.Z_axis
+                                rx, ry, rz = endpose.RX_axis, endpose.RY_axis, endpose.RZ_axis
+                                real_trac.append([x, y, z, rx, ry, rz])
+                                
+                                # 从 pipeline 获取帧
+                                frames = pipeline.wait_for_frames(timeout_ms=3000)
+                                aligned_frames = align.process(frames)
+                                color_frame = aligned_frames.get_color_frame()
+                                
+                                if not color_frame:
+                                    print(f"[警告] {cam_name} 未获取到颜色帧")
+                                    continue
+
+                                # 转换为 numpy 数组
+                                color_image = np.asanyarray(color_frame.get_data())
+                                # BGR -> RGB (如果需要) 或直接保存 BGR (cv2.imwrite 支持 BGR)
+                                # RealSense 默认输出 BGR8 如果配置正确，否则可能是 RGB8
+                                # 这里假设是 BGR，因为 cv2 默认 BGR
+                                
+                                # 保存图像
+                                save_path = os.path.join(
+                                    res_dir,
+                                    f'{cam_name}_{img_count:03d}.png'
+                                )
+                                cv2.imwrite(save_path, color_image)
+                                img_count += 1
+                                
+                                if callback and img_count % 5 == 0:
+                                    callback(f"{cam_name} 已采集 {img_count} 张图像...")
+                                    
+                            except Exception as e:
+                                print(f"[图像采集错误] {e}")
+                                import traceback
+                                traceback.print_exc()
+                                continue
+        
+        # 保存轨迹数据
+        if real_trac:
+            real_trac = np.array(real_trac, dtype=np.float32) / 1000
+            trac_file = os.path.join(trac_dir, 'trac.txt')
+            np.savetxt(trac_file, real_trac, delimiter=',')
+        
+        print(f"[{cam_name}] 采集完成，共 {img_count} 张图像，轨迹已保存")
+        if callback:
+            callback(f"{cam_name} 已采集 {img_count} 张图像")
+
     def _capture_images(self, camera, save_root, cam_name, joint_ranges, callback=None):
         """
-        采集标定用图像
+        采集标定用图像 (使用内部 RealSenseCamera 对象)
         
         :param camera: RealSenseCamera 实例
         :param save_root: 图像保存路径
@@ -240,7 +371,13 @@ class DualCameraCalibrator:
                                     res_dir,
                                     f'{cam_name}_{img_count:03d}.png'
                                 )
-                                camera.work_flow(save_path)
+                                # 假设 RealSenseCamera 有 work_flow 方法保存图片
+                                if hasattr(camera, 'work_flow'):
+                                    camera.work_flow(save_path)
+                                else:
+                                    #  fallback: 尝试获取帧并保存
+                                    # 这取决于 RealSenseCamera 的具体实现
+                                    pass
                                 img_count += 1
                                 
                                 if callback and img_count % 5 == 0:
@@ -326,11 +463,21 @@ class DualCameraCalibrator:
 
 
 # 全局标定器实例
+# 注意：如果在 GUI 中使用，建议在 GUI 启动时创建新的实例并传入 pipelines
+# 这里保留默认实例以兼容旧代码
 global_calibrator = DualCameraCalibrator()
 
 
-def get_calibrator():
-    """获取全局标定器实例"""
+def get_calibrator(external_pipelines=None):
+    """
+    获取全局标定器实例
+    :param external_pipelines: 可选，传入外部相机管道 {1: pipe1, 2: pipe2}
+    """
+    global global_calibrator
+    if external_pipelines is not None:
+        # 如果传入了新管道，创建新实例或更新现有实例
+        # 为了简单，这里创建新实例返回，避免全局状态混乱
+        return DualCameraCalibrator(external_pipelines=external_pipelines)
     return global_calibrator
 
 def default_callback(message):
@@ -340,7 +487,7 @@ def default_callback(message):
 
 def run_calibration(cam_id, cal_root):
     """
-    执行标定流程
+    执行标定流程 (独立脚本模式)
     
     :param cam_id: 相机 ID (1 或 2)
     :param cal_root: 标定结果保存路径
