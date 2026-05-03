@@ -177,8 +177,11 @@ class RobotControlWindow(QMainWindow):
         path1 = "calibration_results/calibration_data1.pickle"
         path2 = "calibration_results/calibration_data2.pickle"
         self.arm = robot.RobotArm()
-        self.tran1 = trans.Transform(path=path1)
-        self.tran2 = trans.Transform(path=path2)
+        # 相机1：确认是眼在外 (Eye-to-Hand)
+        self.tran1 = trans.Transform(path=path1, is_eye_in_hand=False)
+        
+        # 相机2：确认为眼在手上 (Eye-in-Hand)
+        self.tran2 = trans.Transform(path=path2, is_eye_in_hand=True)
         
         # 标定器（不初始化相机，避免与相机线程冲突）
         self.calibrator = get_calibrator()
@@ -501,7 +504,7 @@ class RobotControlWindow(QMainWindow):
         global target_position
         self.update_status("回零位...")
         with lock:
-            target_position = [0, 0, 0, 0, 0, 0]
+            target_position = [56.128, 0.0, 213.266, 0.0, 85.0, 0.0]
         self.update_status("已回零")
         
     def on_move_to_point(self):
@@ -546,9 +549,16 @@ class RobotControlWindow(QMainWindow):
                     depth = depth_sample2[i]
                     if depth > 0:
                         pixel_coords = np.array([x, y, 1])
+                        
+                        # 1. 像素 -> 相机坐标系
                         camera_coords = self.tran2.image_to_camera(pixel_coords, depth)
+                        
+                        # 2. 相机坐标系 -> 末端坐标系 (使用手眼标定矩阵)
                         end_coords = self.tran2.camera_to_end(camera_coords)
+                        
+                        # 3. 末端坐标系 -> 基座坐标系 (使用机械臂实时位姿)
                         base_coords = self.tran2.end_to_base(end_coords)
+                        
                         target_point = [1000*base_coords[0], 1000*base_coords[1], 1000*base_coords[2]]
                         target_points.append(target_point)
                 
