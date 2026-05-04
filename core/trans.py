@@ -32,6 +32,7 @@ class Transform():
         else:
             # 眼在外：加载相机到基座的变换矩阵
             self.cam2base_H = data['cam2base_H']
+        print('加载标定数据成功！')
 
     def set_extrinsics(self):
         """仅用于眼在外模式"""

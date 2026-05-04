@@ -5,7 +5,7 @@ import cv2
 import csv
 import os 
 from utils.handeye_calibration import handeye_calibration        #眼在手外
-#from utils.handeye_calibration import eye_in_hand_calibration   眼在手上
+from utils.eye_in_hand_calibration import handineye_calibration   #眼在手上
 
 class CameraCalibration():
     def __init__(self,calibration_root,chessboard_size=[9, 6], square_size=0.024):
@@ -89,6 +89,9 @@ class CameraCalibration():
 
             
     def hand_eye_calibration(self):
+        '''
+        眼在手外
+        '''
         # 将positions数组中的前3列数据除以1000
         self.positions[:,:3]=self.positions[:,:3]/1000
         # 将positions数组赋值给end2base_xyzrxryrz
@@ -111,6 +114,33 @@ class CameraCalibration():
         self.cam2base_H=cam2base_H
         # 返回cam2base_H
         return cam2base_H
+    
+    def hand_eye_calibrationin(self):
+        '''
+        眼在手上
+        '''
+        # 将positions数组中的前3列数据除以1000
+        self.positions[:,:3]=self.positions[:,:3]/1000 
+        # 将positions数组赋值给end2base_xyzrxryrz
+        end2base_xyzrxryrz=self.positions
+        # 创建一个空列表，用于存储board2cam_xyzrxryrz
+        board2cam_xyzrxryrz_list=[]
+        # 遍历object_points和corner_points
+        for obj, leftp in zip(self.object_points,self.corner_points):
+            # 调用solvePnP_board2cam函数，计算board2cam_xyzrxryrz
+            xyzrxryrz=self.solvePnP_board2cam(obj,leftp,self.intrinsics_matrix,self.dist_coeffs)
+            # 将计算结果添加到board2cam_xyzrxryrz_list列表中
+            board2cam_xyzrxryrz_list.append(xyzrxryrz)
+            
+        # 将board2cam_xyzrxryrz_list列表转换为numpy数组
+        board2cam_xyzrxryrz_list=np.array(board2cam_xyzrxryrz_list)
+        # 调用handineye_calibration函数，计算cam2end_H
+        cam2end_H= handineye_calibration(end2base_xyzrxryrz,board2cam_xyzrxryrz_list)
+        # 进行坐标转换计算
+        self.cam2end_H=cam2end_H
+        # 返回cam2end_H
+        return cam2end_H
+    
     def save_calibration_data(self, root=None):
         if root is None:
             root = self.root
@@ -163,11 +193,20 @@ class CameraCalibration():
     
         self.positions=[i for i in self.positions]
         self.positions=np.array(self.positions,dtype=np.float32)
+
     def calibrate_work(self,save_corner_points_root):
         self.generate_checkboard()
         self.find_checkboard(save_corner_points_root)
         self.intrinsics_calibration()
         self.hand_eye_calibration()
+        self.save_calibration_data(self.root)
+        self.show_arg()
+
+    def calibrate_workin(self,save_corner_points_root):
+        self.generate_checkboard()
+        self.find_checkboard(save_corner_points_root)
+        self.intrinsics_calibration()
+        self.hand_eye_calibrationin()
         self.save_calibration_data(self.root)
         self.show_arg()
 

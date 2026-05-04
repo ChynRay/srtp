@@ -217,7 +217,10 @@ class DualCameraCalibrator:
                 square_size=self.square_size
             )
             save_corner_root = os.path.join(cal_root, 'corner_points', 'detect_points.txt')
-            calibrator.calibrate_work(save_corner_root)
+            if cam_id == 1:
+                calibrator.calibrate_work(save_corner_root)
+            if cam_id == 2:
+                calibrator.calibrate_workin(save_corner_root)
             
             # 保存结果
             result = {
