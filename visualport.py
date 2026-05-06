@@ -563,7 +563,7 @@ class RobotControlWindow(QMainWindow):
                         target_points.append(target_point)
                 
                 if len(target_points) == 3:
-                    normal = calutils1123.get_normal(target_points[-1], target_points[-2], target_points[-3])
+                    normal = calutils1123.get_normalin(target_points[-1], target_points[-2], target_points[-3])
                     z = normal
                     y = [0, 1, 0]
                     x = np.cross(y, z)

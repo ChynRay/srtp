@@ -18,6 +18,21 @@ def get_normal(x,y,z):
         normal = -normal
     return normal
 
+def get_normalin(x,y,z):
+    '''
+    从空间不共线三点组成的平面求其法向量
+    输入：三点坐标 (向量形式)
+    '''
+    p1 = np.array(x)
+    p2 = np.array(y)
+    p3 = np.array(z)
+    # 计算法向量
+    normal = np.cross(p2 - p1, p3 - p1)
+    normal = normal / np.linalg.norm(normal)  # 归一化
+    if normal[0] <= 0:
+        normal = -normal
+    return normal
+
 def get_xaxil(y,z):
     '''
     获取相机坐标系下x轴方向

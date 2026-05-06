@@ -77,11 +77,11 @@ class Transform():
         # pose: [x, y, z, rx, ry, rz] (mm, deg)
         
         # 1. 提取平移向量 t (m)
-        t = np.array([pose[0], pose[1], pose[2]])/1000.0
+        t = np.array([pose[0], pose[1], pose[2]])/1000000.0
         
         # 2. 提取旋转矩阵 R
         # 注意：确保 get_eulertf 接收的是角度(deg)并内部转换为弧度
-        R = calutils1123.get_eulertf(pose[3], pose[4], pose[5])
+        R = calutils1123.get_eulertf(pose[3]/1000, pose[4]/1000, pose[5]/1000)
         
         # 3. 变换: P_base = R * P_end + t
         base_coords = np.dot(R, np.asarray(end_coords).reshape(3,)) + t

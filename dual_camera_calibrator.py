@@ -219,11 +219,7 @@ class DualCameraCalibrator:
             save_corner_root = os.path.join(cal_root, 'corner_points', 'detect_points.txt')
             if cam_id == 1:
                 calibrator.calibrate_work(save_corner_root)
-            if cam_id == 2:
-                calibrator.calibrate_workin(save_corner_root)
-            
-            # 保存结果
-            result = {
+                result = {
                 "intrinsics_matrix": calibrator.intrinsics_matrix,
                 "dist_coeffs": calibrator.dist_coeffs,
                 "cam2base_H": calibrator.cam2base_H,
@@ -231,6 +227,17 @@ class DualCameraCalibrator:
                 "serial": serial,
                 "cal_root": cal_root
             }
+            if cam_id == 2:
+                calibrator.calibrate_workin(save_corner_root)
+                result = {
+                "intrinsics_matrix": calibrator.intrinsics_matrix,
+                "dist_coeffs": calibrator.dist_coeffs,
+                "cam2base_H": calibrator.cam2end_H,
+                "cam_name": cam_name,
+                "serial": serial,
+                "cal_root": cal_root
+            }
+            
             
             if callback:
                 callback(f"{cam_name} 标定完成！")

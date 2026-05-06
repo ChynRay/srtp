@@ -137,7 +137,7 @@ class CameraCalibration():
         # 调用handineye_calibration函数，计算cam2end_H
         cam2end_H= handineye_calibration(end2base_xyzrxryrz,board2cam_xyzrxryrz_list)
         # 进行坐标转换计算
-        self.cam2end_H=cam2end_H
+        self.cam2end_H = cam2end_H
         # 返回cam2end_H
         return cam2end_H
     
@@ -158,6 +158,24 @@ class CameraCalibration():
             f.write(str(self.dist_coeffs) + "\n")
             f.write("cam2base_H:\n")
             f.write(str(self.cam2base_H) + "\n")
+    
+    def save_calibration_datain(self, root=None):
+        if root is None:
+            root = self.root
+        # 保存标定数据
+        with open(os.path.join(root, "calibration_data.pickle"), "wb") as f:
+            pickle.dump({
+                "intrinsics_matrix": self.intrinsics_matrix,
+                "dist_coeffs": self.dist_coeffs,
+                "cam2base_H":self.cam2end_H
+            }, f)
+        with open(os.path.join(root, "calibration_data.txt"), "w") as f:
+            f.write("intrinsics_matrix:\n")
+            f.write(str(self.intrinsics_matrix) + "\n")
+            f.write("dist_coeffs:\n")
+            f.write(str(self.dist_coeffs) + "\n")
+            f.write("cam2base_H:\n")
+            f.write(str(self.cam2end_H) + "\n")
 
     def load_calibration_data(self,root):
         # 加载标定数据
@@ -207,7 +225,7 @@ class CameraCalibration():
         self.find_checkboard(save_corner_points_root)
         self.intrinsics_calibration()
         self.hand_eye_calibrationin()
-        self.save_calibration_data(self.root)
+        self.save_calibration_datain(self.root)
         self.show_arg()
 
 def main(root,chessboard_size,square_size,):
